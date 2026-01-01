@@ -80,14 +80,35 @@
       border-radius: 16px 16px 0 0;
       box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
       z-index: 1000;
-      max-height: 60vh;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+      height: 40vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
     }
 
-    #panel.hidden {
-      transform: translateY(calc(100% - 60px));
+    #panel.dragging {
+      transition: none;
+    }
+
+    #panel.minimized {
+      height: 60px;
+    }
+
+    #panel.maximized {
+      height: 80vh;
+    }
+
+    #panel-handle-area {
+      flex-shrink: 0;
+      padding: 12px;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+
+    #panel-handle-area:active {
+      cursor: grabbing;
     }
 
     #panel-handle {
@@ -95,8 +116,15 @@
       height: 4px;
       background: #d0d0d0;
       border-radius: 2px;
-      margin: 12px auto;
-      cursor: pointer;
+      margin: 0 auto;
+      pointer-events: none;
+    }
+
+    #panel-content-wrapper {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
     }
 
     #panel-content {
@@ -314,15 +342,19 @@
     </svg>
   </button>
 
-  <div id="panel" class="hidden">
-    <div id="panel-handle"></div>
-    <div id="panel-content">
-      <div id="aircraft-list"></div>
-      <div id="empty-state" class="hidden">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-        </svg>
-        <div>No aircraft with position data</div>
+  <div id="panel" class="minimized">
+    <div id="panel-handle-area">
+      <div id="panel-handle"></div>
+    </div>
+    <div id="panel-content-wrapper">
+      <div id="panel-content">
+        <div id="aircraft-list"></div>
+        <div id="empty-state" class="hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+          </svg>
+          <div>No aircraft with position data</div>
+        </div>
       </div>
     </div>
   </div>
@@ -554,17 +586,16 @@
     async function updatePanel(aircraft) {
       const listEl = document.getElementById('aircraft-list');
       const emptyEl = document.getElementById('empty-state');
-      const panel = document.getElementById('panel');
 
       if (aircraft.length === 0) {
         listEl.innerHTML = '';
         emptyEl.classList.remove('hidden');
-        panel.classList.add('hidden');
+        // Don't change panel state - let user control it
         return;
       }
 
       emptyEl.classList.add('hidden');
-      panel.classList.remove('hidden');
+      // Don't change panel state - let user control it
 
       // Only show top 10 closest
       const displayAircraft = aircraft.slice(0, 10);
@@ -662,10 +693,120 @@
       }
     }
 
-    // Panel toggle
-    document.getElementById('panel-handle').addEventListener('click', () => {
-      document.getElementById('panel').classList.toggle('hidden');
+    // Panel resize and drag functionality
+    let panelState = 'minimized'; // minimized, normal, maximized
+    let isDragging = false;
+    let startY = 0;
+    let startHeight = 0;
+    const panel = document.getElementById('panel');
+    const handleArea = document.getElementById('panel-handle-area');
+
+    function setPanelState(state) {
+      panelState = state;
+      panel.classList.remove('minimized', 'maximized');
+
+      if (state === 'minimized') {
+        panel.classList.add('minimized');
+        panel.style.height = '';
+      } else if (state === 'maximized') {
+        panel.classList.add('maximized');
+        panel.style.height = '';
+      } else {
+        // normal state - use default or dragged height
+        if (!panel.style.height) {
+          panel.style.height = '40vh';
+        }
+      }
+    }
+
+    function getPanelHeight() {
+      return panel.offsetHeight;
+    }
+
+    // Click to cycle through states
+    handleArea.addEventListener('click', (e) => {
+      if (!isDragging) {
+        if (panelState === 'minimized') {
+          setPanelState('normal');
+        } else if (panelState === 'normal') {
+          setPanelState('maximized');
+        } else {
+          setPanelState('minimized');
+        }
+      }
     });
+
+    // Drag to resize
+    handleArea.addEventListener('mousedown', startDrag);
+    handleArea.addEventListener('touchstart', startDrag, { passive: false });
+
+    function startDrag(e) {
+      isDragging = false; // Will be set to true if moved
+      const touch = e.type === 'touchstart' ? e.touches[0] : e;
+      startY = touch.clientY;
+      startHeight = getPanelHeight();
+
+      document.addEventListener('mousemove', onDrag);
+      document.addEventListener('touchmove', onDrag, { passive: false });
+      document.addEventListener('mouseup', stopDrag);
+      document.addEventListener('touchend', stopDrag);
+
+      e.preventDefault();
+    }
+
+    function onDrag(e) {
+      const touch = e.type === 'touchmove' ? e.touches[0] : e;
+      const deltaY = startY - touch.clientY; // Positive when dragging up
+      const newHeight = startHeight + deltaY;
+
+      // Mark as dragging if moved more than 5px
+      if (Math.abs(deltaY) > 5) {
+        isDragging = true;
+        panel.classList.add('dragging');
+      }
+
+      // Set custom height and remove state classes
+      if (isDragging) {
+        panelState = 'normal';
+        panel.classList.remove('minimized', 'maximized');
+
+        // Constrain height between min and max
+        const minHeight = 60;
+        const maxHeight = window.innerHeight * 0.85;
+        const constrainedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+        panel.style.height = constrainedHeight + 'px';
+      }
+
+      e.preventDefault();
+    }
+
+    function stopDrag() {
+      document.removeEventListener('mousemove', onDrag);
+      document.removeEventListener('touchmove', onDrag);
+      document.removeEventListener('mouseup', stopDrag);
+      document.removeEventListener('touchend', stopDrag);
+
+      // Re-enable transitions
+      panel.classList.remove('dragging');
+
+      // Snap to states if close
+      if (isDragging) {
+        const currentHeight = getPanelHeight();
+        const windowHeight = window.innerHeight;
+
+        if (currentHeight < 100) {
+          setPanelState('minimized');
+        } else if (currentHeight > windowHeight * 0.7) {
+          setPanelState('maximized');
+        }
+        // Otherwise keep custom height in 'normal' state
+      }
+
+      // Reset flag after a small delay to prevent click from firing
+      setTimeout(() => {
+        isDragging = false;
+      }, 100);
+    }
 
     // Center on receiver button
     document.getElementById('centerBtn').addEventListener('click', () => {
@@ -681,7 +822,10 @@
       if (firstCard) {
         const icao = firstCard.id.replace('aircraft-', '');
         selectAircraft(icao);
-        document.getElementById('panel').classList.remove('hidden');
+        // Expand panel if minimized
+        if (panelState === 'minimized') {
+          setPanelState('normal');
+        }
       }
     });
 
