@@ -1,0 +1,268 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Closest Aircraft</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; }
+    .box { border: 2px solid #ddd; border-radius: 12px; padding: 16px; max-width: 760px; }
+    .big { font-size: 32px; font-weight: 700; }
+    .sub { font-size: 18px; margin-top: 6px; color: #333; }
+    .row { display:flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
+    .kv { background:#f6f6f6; border-radius: 10px; padding: 10px 12px; min-width: 170px; }
+    .k { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color:#666; }
+    .v { font-size: 20px; font-weight: 700; margin-top: 3px; }
+    .cardinal { font-size: 14px; color: #555; margin-top: 2px; }
+    .small { margin-top: 14px; font-size: 13px; color:#666; }
+    .warn { color: #b00; font-weight: 700; }
+    .ok { color: #0a0; font-weight: 700; }
+    code { background: #f2f2f2; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+
+  <div class="box">
+    <div class="big" id="callsign">Loading…</div>
+    <div class="sub" id="summary">Initializing…</div>
+
+    <div class="row">
+      <div class="kv"><div class="k">Distance</div><div class="v" id="dist">—</div></div>
+      <div class="kv"><div class="k">Altitude</div><div class="v" id="alt">—</div></div>
+      <div class="kv"><div class="k">Speed</div><div class="v" id="spd">—</div></div>
+      <div class="kv">
+        <div class="k">Heading</div>
+        <div class="v" id="trk">—</div>
+        <div class="cardinal" id="trk-hint"></div>
+      </div>
+      <div class="kv"><div class="k">Squawk</div><div class="v" id="squawk">—</div></div>
+      <div class="kv"><div class="k">ICAO</div><div class="v" id="icao">—</div></div>
+    </div>
+
+    <div class="small" id="rxpos">Receiver: —</div>
+    <div class="small" id="age">—</div>
+  </div>
+
+  <p class="small">
+    <!-- Data sources: <code>/data/receiver.json</code> + <code>/data/aircraft.json</code> -->
+  </p>
+
+<script>
+  // How often to update aircraft data (ms)
+  const REFRESH_MS = 1000;
+
+  // Optional: if you want to prefer lower altitude slightly for tie-breaking.
+  // Score = distance_km + ALT_WEIGHT * (altitude_ft / 10000)
+  // Set ALT_WEIGHT = 0 for pure closest-by-distance.
+  const ALT_WEIGHT = 0.10;
+
+  // Ignore aircraft with stale position (seconds since last message)
+  // Set to null to disable.
+  const MAX_SEEN_S = 5.0;
+
+  // Receiver position will be filled from receiver.json:
+  let SITE_LAT = null;
+  let SITE_LON = null;
+  let RECEIVER_REFRESH_MS = null;
+  let RECEIVER_VERSION = null;
+
+  function degreesToCardinal(deg) {
+    if (deg === null || deg === undefined) return null;
+    const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+    const idx = Math.round(((deg % 360) + 360) % 360 / 22.5) % 16;
+    return dirs[idx];
+  }
+
+  function cardinalToHint(cardinal) {
+    const hints = {
+      "N":   "Flying north ↑",
+      "NNE": "Flying north-northeast ↗",
+      "NE":  "Flying northeast ↗",
+      "ENE": "Flying east-northeast ↗",
+      "E":   "Flying east →",
+      "ESE": "Flying east-southeast ↘",
+      "SE":  "Flying southeast ↘",
+      "SSE": "Flying south-southeast ↘",
+      "S":   "Flying south ↓",
+      "SSW": "Flying south-southwest ↙",
+      "SW":  "Flying southwest ↙",
+      "WSW": "Flying west-southwest ↙",
+      "W":   "Flying west ←",
+      "WNW": "Flying west-northwest ↖",
+      "NW":  "Flying northwest ↖",
+      "NNW": "Flying north-northwest ↖"
+    };
+    return hints[cardinal] || "";
+  }
+
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371.0;
+    const toRad = x => x * Math.PI / 180.0;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  function setText(id, value) {
+    document.getElementById(id).textContent = value;
+  }
+
+  function pickClosest(acList) {
+    if (SITE_LAT === null || SITE_LON === null) return null;
+
+    const candidates = acList
+      .filter(a => a.lat !== undefined && a.lon !== undefined)
+      .filter(a => MAX_SEEN_S === null || a.seen === undefined || a.seen <= MAX_SEEN_S)
+      .map(a => {
+        const distKm = haversineKm(SITE_LAT, SITE_LON, a.lat, a.lon);
+        const altFt = a.alt_baro ?? a.alt ?? a.altitude ?? null;
+        const score = distKm + (ALT_WEIGHT * ((altFt ?? 0) / 10000.0));
+        return { a, distKm, altFt, score };
+      });
+
+    if (!candidates.length) return null;
+
+    candidates.sort((x, y) => x.score - y.score);
+    return candidates[0];
+  }
+
+  async function loadReceiverPosition() {
+    const res = await fetch("data/receiver.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`receiver.json HTTP ${res.status}`);
+    const rx = await res.json();
+
+    RECEIVER_VERSION = rx.version ?? null;
+    RECEIVER_REFRESH_MS = rx.refresh ?? null;
+
+    if (typeof rx.lat === "number" && typeof rx.lon === "number") {
+      SITE_LAT = rx.lat;
+      SITE_LON = rx.lon;
+      setText("rxpos",
+        `Receiver: ${SITE_LAT.toFixed(6)}, ${SITE_LON.toFixed(6)}`
+        + (RECEIVER_VERSION ? ` • ${RECEIVER_VERSION}` : "")
+        + (RECEIVER_REFRESH_MS ? ` • refresh ${RECEIVER_REFRESH_MS}ms` : "")
+      );
+      return true;
+    }
+
+    // Missing lat/lon
+    SITE_LAT = null;
+    SITE_LON = null;
+    setText("rxpos", "Receiver: (lat/lon missing in receiver.json)");
+    return false;
+  }
+
+  async function updateAircraft() {
+    try {
+      if (SITE_LAT === null || SITE_LON === null) {
+        setText("callsign", "Receiver position not set");
+        setText("summary", "Set lat/lon in dump1090 config or ensure /data/receiver.json includes it.");
+        return;
+      }
+
+      const res = await fetch("data/aircraft.json", { cache: "no-store" });
+      if (!res.ok) throw new Error(`aircraft.json HTTP ${res.status}`);
+      const json = await res.json();
+
+      const closest = pickClosest(json.aircraft || []);
+      if (!closest) {
+        setText("callsign", "No aircraft with position");
+        setText("summary", MAX_SEEN_S !== null
+          ? `No targets with lat/lon (or all are older than ${MAX_SEEN_S}s).`
+          : "No targets with lat/lon right now.");
+        setText("dist", "—");
+        setText("alt", "—");
+        setText("spd", "—");
+        setText("trk", "—");
+        setText("trk-hint", "");
+        setText("squawk", "—");
+        setText("icao", "—");
+        setText("age", `Updated: ${new Date().toLocaleTimeString()}`);
+        return;
+      }
+
+      const a = closest.a;
+
+      const callsign = (a.flight || "").trim();
+      const label = callsign ? callsign : `ICAO ${a.hex || "unknown"}`;
+
+      const distKm = closest.distKm;
+      const distMi = distKm * 0.621371;
+      const altFt = closest.altFt;
+      const gs = a.gs ?? a.speed ?? null;
+      const track = a.track ?? null;
+      const squawk = a.squawk ?? null;
+      const seen = a.seen ?? null;
+
+      setText("callsign", label);
+      setText("summary", "Closest target with position (lat/lon).");
+
+      const distStr = `${distMi.toFixed(2)} mi (${distKm.toFixed(2)} km)`;
+      const altStr = altFt !== null ? `${Math.round(altFt).toLocaleString()} ft` : "—";
+      const spdStr = gs !== null ? `${Math.round(gs)} kt` : "—";
+      
+      // Heading with cardinal direction
+      const cardinal = degreesToCardinal(track);
+      const trkStr = track !== null ? `${Math.round(track)}° ${cardinal}` : "—";
+      const hintStr = cardinal ? cardinalToHint(cardinal) : "";
+
+      setText("dist", distStr);
+      setText("alt", altStr);
+      setText("spd", spdStr);
+      setText("trk", trkStr);
+      setText("trk-hint", hintStr);
+      setText("squawk", squawk || "—");
+      setText("icao", (a.hex || "—").toUpperCase());
+
+      const seenStr = seen !== null ? `Last seen: ${seen.toFixed(1)}s ago` : "";
+      setText("age", `${seenStr} • Updated: ${new Date().toLocaleTimeString()}`);
+
+    } catch (e) {
+      setText("callsign", "Error");
+      setText("summary", `Could not fetch aircraft.json (${e.message})`);
+    }
+  }
+
+  async function init() {
+    setText("callsign", "Loading receiver position…");
+    setText("summary", "Fetching /data/receiver.json");
+
+    try {
+      const ok = await loadReceiverPosition();
+      if (!ok) {
+        setText("callsign", "Receiver lat/lon missing");
+        setText("summary", "Your /data/receiver.json does not include lat/lon. Add them to dump1090 config.");
+        return;
+      }
+
+      // Align refresh with receiver refresh if available
+      if (typeof RECEIVER_REFRESH_MS === "number" && RECEIVER_REFRESH_MS >= 250) {
+        setText("summary", "Receiver position loaded. Starting aircraft polling…");
+      } else {
+        setText("summary", "Receiver position loaded. Starting aircraft polling…");
+      }
+
+      // First update immediately
+      await updateAircraft();
+
+      // Then poll aircraft regularly
+      setInterval(updateAircraft, REFRESH_MS);
+
+      // Optionally: reload receiver.json every few minutes in case you update settings
+      // setInterval(loadReceiverPosition, 5 * 60 * 1000);
+
+    } catch (e) {
+      setText("callsign", "Error");
+      setText("summary", `Could not fetch receiver.json (${e.message})`);
+      setText("rxpos", "Receiver: —");
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
