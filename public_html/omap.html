@@ -181,9 +181,9 @@
       z-index: 0;
     }
 
-    /* Leaflet zoom controls positioning - bottom right, above panel */
-    .leaflet-bottom.leaflet-right {
-      bottom: calc(40vh + 16px);
+    /* Leaflet zoom controls positioning - top right, below topbar */
+    .leaflet-top.leaflet-right {
+      top: 72px;
       right: 16px;
     }
 
@@ -473,11 +473,11 @@
       filter: drop-shadow(0 4px 8px rgba(33,150,243,0.6));
     }
 
-    /* Buttons */
+    /* Buttons - LEFT side, tightly grouped */
     .btn {
       position: absolute;
       top: 72px;
-      right: 16px;
+      left: 16px;
       width: 44px;
       height: 44px;
       background: var(--btn-bg);
@@ -528,15 +528,15 @@
     }
 
     #closestBtn {
-      top: 120px;
+      top: 122px;
     }
 
     #labelsBtn {
-      top: 168px;
+      top: 172px;
     }
 
     #darkModeBtn {
-      top: 216px;
+      top: 222px;
     }
 
     .btn.active {
@@ -791,8 +791,8 @@
         attributionControl: true
       }).setView([42.3601, -71.0589], 10);
 
-      // Add zoom control to bottom-right
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
+      // Add zoom control to top-right
+      L.control.zoom({ position: 'topright' }).addTo(map);
 
       // Create light and dark tile layers
       lightTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
