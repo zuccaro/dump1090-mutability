@@ -291,6 +291,47 @@
       top: 128px;
     }
 
+    #labelsBtn {
+      top: 184px;
+    }
+
+    #labelsBtn.active {
+      background: #2196F3;
+      color: white;
+    }
+
+    /* Aircraft labels */
+    .aircraft-label {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      pointer-events: none;
+      z-index: 600;
+      color: #333;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+
+    .aircraft-label.selected {
+      background: rgba(33, 150, 243, 0.95);
+      color: white;
+      border-color: rgba(33, 150, 243, 0.3);
+    }
+
+    .aircraft-label-callsign {
+      font-weight: 700;
+      margin-right: 4px;
+    }
+
+    .aircraft-label-info {
+      font-size: 10px;
+      opacity: 0.9;
+    }
+
     @media (max-width: 600px) {
       #stats {
         font-size: 12px;
@@ -342,6 +383,12 @@
     </svg>
   </button>
 
+  <button id="labelsBtn" class="btn" title="Toggle aircraft labels">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 7h18M3 12h18M3 17h18"/>
+    </svg>
+  </button>
+
   <div id="panel" class="minimized">
     <div id="panel-handle-area">
       <div id="panel-handle"></div>
@@ -371,8 +418,10 @@
     let map = null;
     let receiverPosition = null;
     let aircraftMarkers = {};
+    let aircraftLabels = {};
     let selectedAircraft = null;
     let autoCenter = false;
+    let showLabels = false;
 
     // Geocoding cache
     const locationCache = new Map();
@@ -571,6 +620,65 @@
       });
     }
 
+    // Create/update aircraft label
+    function createAircraftLabel(icao, aircraft, isSelected) {
+      const callsign = (aircraft.flight || '').trim() || icao.toUpperCase();
+      const alt = aircraft.alt_baro || aircraft.altitude || aircraft.alt;
+      const speed = aircraft.gs || aircraft.speed;
+
+      // Format altitude with thousands separator and arrow
+      const altStr = alt ? `↑${Math.round(alt / 1000)}k` : '—';
+      const spdStr = speed ? `${Math.round(speed)}kt` : '—';
+
+      const labelContent = `
+        <span class="aircraft-label-callsign">${callsign}</span>
+        <span class="aircraft-label-info">${altStr} ${spdStr}</span>
+      `;
+
+      // If label doesn't exist, create it
+      if (!aircraftLabels[icao]) {
+        const labelDiv = L.divIcon({
+          html: `<div class="aircraft-label ${isSelected ? 'selected' : ''}">${labelContent}</div>`,
+          className: '',
+          iconSize: [0, 0],
+          iconAnchor: [-15, 0] // Offset to the right of the aircraft
+        });
+
+        const marker = L.marker([aircraft.lat, aircraft.lon], { icon: labelDiv })
+          .addTo(map);
+
+        aircraftLabels[icao] = marker;
+      } else {
+        // Update existing label
+        const labelDiv = L.divIcon({
+          html: `<div class="aircraft-label ${isSelected ? 'selected' : ''}">${labelContent}</div>`,
+          className: '',
+          iconSize: [0, 0],
+          iconAnchor: [-15, 0]
+        });
+
+        aircraftLabels[icao].setLatLng([aircraft.lat, aircraft.lon]);
+        aircraftLabels[icao].setIcon(labelDiv);
+      }
+    }
+
+    // Show/hide all labels
+    function toggleLabels() {
+      showLabels = !showLabels;
+      const btn = document.getElementById('labelsBtn');
+
+      if (showLabels) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+        // Remove all labels
+        Object.keys(aircraftLabels).forEach(icao => {
+          map.removeLayer(aircraftLabels[icao]);
+          delete aircraftLabels[icao];
+        });
+      }
+    }
+
     // Update aircraft
     async function updateAircraft() {
       try {
@@ -600,11 +708,16 @@
         // Update markers
         const currentIcaos = new Set(aircraft.map(a => a.hex));
 
-        // Remove old markers
+        // Remove old markers and labels
         Object.keys(aircraftMarkers).forEach(icao => {
           if (!currentIcaos.has(icao)) {
             map.removeLayer(aircraftMarkers[icao]);
             delete aircraftMarkers[icao];
+
+            if (aircraftLabels[icao]) {
+              map.removeLayer(aircraftLabels[icao]);
+              delete aircraftLabels[icao];
+            }
           }
         });
 
@@ -623,6 +736,27 @@
             aircraftMarkers[a.hex] = marker;
           }
         });
+
+        // Update labels if enabled
+        if (showLabels) {
+          // Only show labels for closest 15 aircraft to avoid clutter
+          const labeledAircraft = aircraft.slice(0, 15);
+          const labeledIcaos = new Set(labeledAircraft.map(a => a.hex));
+
+          // Remove labels for aircraft not in top 15
+          Object.keys(aircraftLabels).forEach(icao => {
+            if (!labeledIcaos.has(icao)) {
+              map.removeLayer(aircraftLabels[icao]);
+              delete aircraftLabels[icao];
+            }
+          });
+
+          // Create/update labels for top 15
+          labeledAircraft.forEach(a => {
+            const isSelected = selectedAircraft === a.hex;
+            createAircraftLabel(a.hex, a, isSelected);
+          });
+        }
 
         // Update panel
         updatePanel(aircraft);
@@ -878,6 +1012,9 @@
         }
       }
     });
+
+    // Toggle labels button
+    document.getElementById('labelsBtn').addEventListener('click', toggleLabels);
 
     // Initialize
     initMap();
