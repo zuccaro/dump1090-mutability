@@ -40,6 +40,7 @@
     </div>
 
     <div class="small" id="rxpos">Receiver: —</div>
+    <div class="small" id="location">Location: —</div>
     <div class="small" id="age">—</div>
   </div>
 
@@ -65,6 +66,87 @@
   let SITE_LON = null;
   let RECEIVER_REFRESH_MS = null;
   let RECEIVER_VERSION = null;
+
+  // Reverse geocoding cache and rate limiting
+  const locationCache = new Map();
+  let lastGeocodingCall = 0;
+  const GEOCODING_COOLDOWN_MS = 1100; // Respect Nominatim's 1 req/sec limit
+
+  // Round coordinates to reduce cache misses for nearby positions
+  function roundCoords(lat, lon, precision = 2) {
+    return `${lat.toFixed(precision)},${lon.toFixed(precision)}`;
+  }
+
+  async function reverseGeocode(lat, lon) {
+    const key = roundCoords(lat, lon);
+
+    // Check cache first
+    if (locationCache.has(key)) {
+      return locationCache.get(key);
+    }
+
+    // Rate limiting: ensure we don't call too frequently
+    const now = Date.now();
+    const timeSinceLastCall = now - lastGeocodingCall;
+    if (timeSinceLastCall < GEOCODING_COOLDOWN_MS) {
+      return null; // Skip this call, will retry next update
+    }
+
+    try {
+      lastGeocodingCall = now;
+
+      // Using OpenStreetMap Nominatim API
+      const url = `https://nominatim.openstreetmap.org/reverse?` +
+        `format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`;
+
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'dump1090-mutability-closest-aircraft-display'
+        }
+      });
+
+      if (!res.ok) {
+        console.warn(`Nominatim HTTP ${res.status}`);
+        return null;
+      }
+
+      const data = await res.json();
+
+      // Build location string from address components
+      const addr = data.address || {};
+      const parts = [];
+
+      // Try to get city/town/village
+      const place = addr.city || addr.town || addr.village || addr.hamlet ||
+                    addr.municipality || addr.county;
+      if (place) parts.push(place);
+
+      // Add state/region for US/large countries
+      const region = addr.state || addr.region;
+      if (region && region !== place) parts.push(region);
+
+      // Add country
+      const country = addr.country;
+      if (country) parts.push(country);
+
+      const locationStr = parts.length > 0 ? parts.join(", ") : "Location unknown";
+
+      // Cache the result
+      locationCache.set(key, locationStr);
+
+      // Limit cache size to prevent memory issues
+      if (locationCache.size > 100) {
+        const firstKey = locationCache.keys().next().value;
+        locationCache.delete(firstKey);
+      }
+
+      return locationStr;
+
+    } catch (e) {
+      console.warn(`Geocoding error: ${e.message}`);
+      return null;
+    }
+  }
 
   function degreesToCardinal(deg) {
     if (deg === null || deg === undefined) return null;
@@ -181,6 +263,7 @@
         setText("trk-hint", "");
         setText("squawk", "—");
         setText("icao", "—");
+        setText("location", "Location: —");
         setText("age", `Updated: ${new Date().toLocaleTimeString()}`);
         return;
       }
@@ -217,6 +300,14 @@
       setText("trk-hint", hintStr);
       setText("squawk", squawk || "—");
       setText("icao", (a.hex || "—").toUpperCase());
+
+      // Get location for aircraft position
+      const location = await reverseGeocode(a.lat, a.lon);
+      if (location) {
+        setText("location", `Flying over: ${location}`);
+      } else {
+        setText("location", "Flying over: (loading location...)");
+      }
 
       const seenStr = seen !== null ? `Last seen: ${seen.toFixed(1)}s ago` : "";
       setText("age", `${seenStr} • Updated: ${new Date().toLocaleTimeString()}`);

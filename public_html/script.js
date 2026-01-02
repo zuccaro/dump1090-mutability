@@ -42,6 +42,84 @@ var MessageRate = 0;
 
 var NBSP='\u00a0';
 
+// Reverse geocoding cache and rate limiting
+var locationCache = {};
+var lastGeocodingCall = 0;
+var GEOCODING_COOLDOWN_MS = 1100; // Respect Nominatim's 1 req/sec limit
+
+// Round coordinates to reduce cache misses for nearby positions
+function roundCoords(lat, lon, precision) {
+        if (precision === undefined) precision = 2;
+        return lat.toFixed(precision) + "," + lon.toFixed(precision);
+}
+
+function reverseGeocode(lat, lon, callback) {
+        var key = roundCoords(lat, lon);
+
+        // Check cache first
+        if (locationCache[key]) {
+                callback(locationCache[key]);
+                return;
+        }
+
+        // Rate limiting: ensure we don't call too frequently
+        var now = Date.now();
+        var timeSinceLastCall = now - lastGeocodingCall;
+        if (timeSinceLastCall < GEOCODING_COOLDOWN_MS) {
+                callback(null); // Skip this call, will retry next update
+                return;
+        }
+
+        lastGeocodingCall = now;
+
+        // Using OpenStreetMap Nominatim API
+        var url = "https://nominatim.openstreetmap.org/reverse?" +
+                "format=json&lat=" + lat + "&lon=" + lon + "&zoom=10&addressdetails=1";
+
+        $.ajax({
+                url: url,
+                method: 'GET',
+                headers: {
+                        'User-Agent': 'dump1090-mutability-aircraft-tracker'
+                },
+                timeout: 5000,
+                success: function(data) {
+                        // Build location string from address components
+                        var addr = data.address || {};
+                        var parts = [];
+
+                        // Try to get city/town/village
+                        var place = addr.city || addr.town || addr.village || addr.hamlet ||
+                                    addr.municipality || addr.county;
+                        if (place) parts.push(place);
+
+                        // Add state/region for US/large countries
+                        var region = addr.state || addr.region;
+                        if (region && region !== place) parts.push(region);
+
+                        // Add country
+                        var country = addr.country;
+                        if (country) parts.push(country);
+
+                        var locationStr = parts.length > 0 ? parts.join(", ") : "Location unknown";
+
+                        // Cache the result
+                        locationCache[key] = locationStr;
+
+                        // Limit cache size to prevent memory issues
+                        var cacheKeys = Object.keys(locationCache);
+                        if (cacheKeys.length > 100) {
+                                delete locationCache[cacheKeys[0]];
+                        }
+
+                        callback(locationStr);
+                },
+                error: function() {
+                        callback(null);
+                }
+        });
+}
+
 function processReceiverUpdate(data) {
 	// Loop through all the planes in the data packet
         var now = data.now;
@@ -740,6 +818,7 @@ function refreshSelected() {
 
 	if (selected.position === null) {
                 $('#selected_position').text('n/a');
+                $('#selected_location').text('n/a');
                 $('#selected_follow').addClass('hidden');
         } else {
                 var mlat_bit = (selected.position_from_mlat ? "MLAT: " : "");
@@ -755,8 +834,17 @@ function refreshSelected() {
                 } else {
                         $('#selected_follow').css('font-weight', 'normal');
                 }
+
+                // Get location for aircraft position
+                reverseGeocode(selected.position[1], selected.position[0], function(location) {
+                        if (location) {
+                                $('#selected_location').text(location);
+                        } else {
+                                $('#selected_location').text('(loading...)');
+                        }
+                });
 	}
-        
+
         $('#selected_sitedist').text(format_distance_long(selected.sitedist));
         $('#selected_rssi').text(selected.rssi.toFixed(1) + ' dBFS');
 }
