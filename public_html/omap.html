@@ -11,6 +11,62 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --text-primary: #333;
+      --text-secondary: #666;
+      --text-tertiary: #888;
+      --border-color: #e0e0e0;
+      --shadow-sm: rgba(0,0,0,0.1);
+      --shadow-md: rgba(0,0,0,0.15);
+      --shadow-lg: rgba(0,0,0,0.2);
+      --panel-bg: rgba(255,255,255,0.95);
+      --topbar-bg: rgba(255,255,255,0.95);
+      --card-bg: #ffffff;
+      --label-bg: rgba(255,255,255,0.95);
+      --label-text: #333;
+      --label-border: rgba(0,0,0,0.1);
+      --empty-icon-opacity: 0.3;
+      --handle-color: #d0d0d0;
+      --btn-bg: #ffffff;
+      --btn-shadow: rgba(0,0,0,0.15);
+      --btn-active-bg: #f5f5f5;
+      --spinner-border: #f3f3f3;
+      --accent-color: #2196F3;
+      --accent-text: #ffffff;
+      --update-active: #4CAF50;
+      --update-idle: #CCC;
+    }
+
+    body.dark-mode {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #2a2a2a;
+      --text-primary: #e0e0e0;
+      --text-secondary: #b0b0b0;
+      --text-tertiary: #808080;
+      --border-color: #404040;
+      --shadow-sm: rgba(0,0,0,0.3);
+      --shadow-md: rgba(0,0,0,0.5);
+      --shadow-lg: rgba(0,0,0,0.6);
+      --panel-bg: rgba(26,26,26,0.95);
+      --topbar-bg: rgba(26,26,26,0.95);
+      --card-bg: #2a2a2a;
+      --label-bg: rgba(42,42,42,0.95);
+      --label-text: #e0e0e0;
+      --label-border: rgba(255,255,255,0.1);
+      --empty-icon-opacity: 0.2;
+      --handle-color: #505050;
+      --btn-bg: #2a2a2a;
+      --btn-shadow: rgba(0,0,0,0.5);
+      --btn-active-bg: #333333;
+      --spinner-border: #444444;
+      --accent-color: #2196F3;
+      --accent-text: #ffffff;
+      --update-active: #4CAF50;
+      --update-idle: #666;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -18,6 +74,9 @@
       overflow: hidden;
       height: 100vh;
       -webkit-font-smoothing: antialiased;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
 
     #map {
@@ -36,25 +95,27 @@
       left: 0;
       right: 0;
       height: 56px;
-      background: rgba(255,255,255,0.95);
+      background: var(--topbar-bg);
       backdrop-filter: blur(10px);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 8px var(--shadow-sm);
       z-index: 1000;
       display: flex;
       align-items: center;
       padding: 0 16px;
       gap: 12px;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
     }
 
     #topbar h1 {
       font-size: 18px;
       font-weight: 600;
       flex: 1;
+      color: var(--text-primary);
     }
 
     #stats {
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
       display: flex;
       gap: 12px;
     }
@@ -67,7 +128,7 @@
 
     .stat-num {
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
     }
 
     /* Bottom panel */
@@ -76,15 +137,15 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: white;
+      background: var(--panel-bg);
       border-radius: 16px 16px 0 0;
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+      box-shadow: 0 -4px 20px var(--shadow-md);
       z-index: 1000;
       height: 40vh;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transition: height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1), background-color 0.3s ease, box-shadow 0.3s ease;
     }
 
     #panel.dragging {
@@ -114,10 +175,11 @@
     #panel-handle {
       width: 40px;
       height: 4px;
-      background: #d0d0d0;
+      background: var(--handle-color);
       border-radius: 2px;
       margin: 0 auto;
       pointer-events: none;
+      transition: background-color 0.3s ease;
     }
 
     #panel-content-wrapper {
@@ -132,23 +194,28 @@
     }
 
     .aircraft-card {
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-color);
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 12px;
       cursor: pointer;
       transition: all 0.2s;
-      background: white;
+      background: var(--card-bg);
     }
 
     .aircraft-card:active {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       transform: scale(0.98);
     }
 
     .aircraft-card.selected {
       border-color: #2196F3;
       background: #E3F2FD;
+    }
+
+    body.dark-mode .aircraft-card.selected {
+      background: rgba(33, 150, 243, 0.2);
+      border-color: #2196F3;
     }
 
     .aircraft-header {
@@ -161,7 +228,7 @@
     .aircraft-callsign {
       font-size: 18px;
       font-weight: 700;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .aircraft-distance {
@@ -182,14 +249,14 @@
     }
 
     .info-label {
-      color: #888;
+      color: var(--text-tertiary);
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
     .info-value {
-      color: #333;
+      color: var(--text-primary);
       font-weight: 600;
       margin-top: 2px;
     }
@@ -197,27 +264,27 @@
     .aircraft-location {
       margin-top: 8px;
       padding-top: 8px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-color);
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .aircraft-location strong {
-      color: #333;
+      color: var(--text-primary);
     }
 
     /* Empty state */
     #empty-state {
       padding: 40px 20px;
       text-align: center;
-      color: #888;
+      color: var(--text-tertiary);
     }
 
     #empty-state svg {
       width: 64px;
       height: 64px;
       margin-bottom: 16px;
-      opacity: 0.3;
+      opacity: var(--empty-icon-opacity);
     }
 
     /* Loading spinner */
@@ -225,8 +292,8 @@
       display: inline-block;
       width: 16px;
       height: 16px;
-      border: 2px solid #f3f3f3;
-      border-top: 2px solid #2196F3;
+      border: 2px solid var(--spinner-border);
+      border-top: 2px solid var(--accent-color);
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
@@ -266,21 +333,22 @@
       right: 16px;
       width: 44px;
       height: 44px;
-      background: white;
+      background: var(--btn-bg);
+      color: var(--text-primary);
       border: none;
       border-radius: 50%;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      box-shadow: 0 2px 8px var(--btn-shadow);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 999;
-      transition: all 0.2s;
+      transition: all 0.2s, background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
     }
 
     .btn:active {
       transform: scale(0.95);
-      background: #f5f5f5;
+      background: var(--btn-active-bg);
     }
 
     #centerBtn {
@@ -295,30 +363,35 @@
       top: 184px;
     }
 
-    #labelsBtn.active {
-      background: #2196F3;
-      color: white;
+    #darkModeBtn {
+      top: 240px;
+    }
+
+    .btn.active {
+      background: var(--accent-color);
+      color: var(--accent-text);
     }
 
     /* Aircraft labels */
     .aircraft-label {
       position: absolute;
-      background: rgba(255, 255, 255, 0.95);
+      background: var(--label-bg);
       padding: 4px 8px;
       border-radius: 6px;
       font-size: 11px;
       font-weight: 600;
       white-space: nowrap;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 6px var(--shadow-md);
       pointer-events: none;
       z-index: 600;
-      color: #333;
-      border: 1px solid rgba(0,0,0,0.1);
+      color: var(--label-text);
+      border: 1px solid var(--label-border);
+      transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
     }
 
     .aircraft-label.selected {
       background: rgba(33, 150, 243, 0.95);
-      color: white;
+      color: var(--accent-text);
       border-color: rgba(33, 150, 243, 0.3);
     }
 
@@ -389,6 +462,12 @@
     </svg>
   </button>
 
+  <button id="darkModeBtn" class="btn" title="Toggle dark mode">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+
   <div id="panel" class="minimized">
     <div id="panel-handle-area">
       <div id="panel-handle"></div>
@@ -422,6 +501,9 @@
     let selectedAircraft = null;
     let autoCenter = false;
     let showLabels = true; // Labels on by default
+    let isDarkMode = false;
+    let lightTileLayer = null;
+    let darkTileLayer = null;
 
     // Geocoding cache
     const locationCache = new Map();
@@ -468,6 +550,48 @@
       return "data:image/svg+xml;base64," + btoa(svgPathToSvg(path, size, stroke, width, fill));
     }
 
+    // Dark mode functions
+    function initDarkMode() {
+      // Check localStorage first, then system preference
+      const savedTheme = localStorage.getItem('darkMode');
+
+      if (savedTheme !== null) {
+        isDarkMode = savedTheme === 'true';
+      } else {
+        // Detect system preference
+        isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+
+      applyDarkMode();
+    }
+
+    function applyDarkMode() {
+      if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        document.getElementById('darkModeBtn').classList.add('active');
+      } else {
+        document.body.classList.remove('dark-mode');
+        document.getElementById('darkModeBtn').classList.remove('active');
+      }
+
+      // Switch map tiles if map is initialized
+      if (map && lightTileLayer && darkTileLayer) {
+        if (isDarkMode) {
+          map.removeLayer(lightTileLayer);
+          darkTileLayer.addTo(map);
+        } else {
+          map.removeLayer(darkTileLayer);
+          lightTileLayer.addTo(map);
+        }
+      }
+    }
+
+    function toggleDarkMode() {
+      isDarkMode = !isDarkMode;
+      localStorage.setItem('darkMode', isDarkMode.toString());
+      applyDarkMode();
+    }
+
     // Initialize map
     function initMap() {
       map = L.map('map', {
@@ -478,12 +602,25 @@
       // Add zoom control to top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
 
-      // Add tile layer - using CartoDB Positron (light, minimal style)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      // Create light and dark tile layers
+      lightTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
         maxZoom: 19,
         subdomains: 'abcd'
-      }).addTo(map);
+      });
+
+      darkTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+        subdomains: 'abcd'
+      });
+
+      // Add the appropriate layer based on dark mode
+      if (isDarkMode) {
+        darkTileLayer.addTo(map);
+      } else {
+        lightTileLayer.addTo(map);
+      }
 
       loadReceiverPosition();
     }
@@ -693,9 +830,12 @@
         // Update stats
         document.getElementById('total-aircraft').textContent = data.aircraft.length;
         document.getElementById('pos-aircraft').textContent = aircraft.length;
-        document.getElementById('update-indicator').style.color = '#4CAF50';
+        const updateIndicator = document.getElementById('update-indicator');
+        const activeColor = getComputedStyle(document.documentElement).getPropertyValue('--update-active').trim();
+        const idleColor = getComputedStyle(document.documentElement).getPropertyValue('--update-idle').trim();
+        updateIndicator.style.color = activeColor;
         setTimeout(() => {
-          document.getElementById('update-indicator').style.color = '#CCC';
+          updateIndicator.style.color = idleColor;
         }, 200);
 
         // Calculate distances
@@ -1016,6 +1156,12 @@
 
     // Toggle labels button
     document.getElementById('labelsBtn').addEventListener('click', toggleLabels);
+
+    // Toggle dark mode button
+    document.getElementById('darkModeBtn').addEventListener('click', toggleDarkMode);
+
+    // Initialize dark mode (before map to ensure correct tiles are loaded)
+    initDarkMode();
 
     // Initialize
     initMap();
