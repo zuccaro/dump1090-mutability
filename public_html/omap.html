@@ -383,7 +383,7 @@
     </svg>
   </button>
 
-  <button id="labelsBtn" class="btn" title="Toggle aircraft labels">
+  <button id="labelsBtn" class="btn active" title="Toggle aircraft labels">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M3 7h18M3 12h18M3 17h18"/>
     </svg>
@@ -421,7 +421,7 @@
     let aircraftLabels = {};
     let selectedAircraft = null;
     let autoCenter = false;
-    let showLabels = false;
+    let showLabels = true; // Labels on by default
 
     // Geocoding cache
     const locationCache = new Map();
@@ -478,10 +478,11 @@
       // Add zoom control to top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
 
-      // Add tile layer - using OpenStreetMap
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19
+      // Add tile layer - using CartoDB Positron (light, minimal style)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+        subdomains: 'abcd'
       }).addTo(map);
 
       loadReceiverPosition();
