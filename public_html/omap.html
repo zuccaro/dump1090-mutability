@@ -1454,9 +1454,8 @@
         callsignText.textContent = callsign;
         copyBtn.dataset.callsign = callsign;
 
-        // Update FlightAware link URL - use actual callsign if available, otherwise ICAO hex
-        const faCallsign = (a.flight || '').trim() || icao.toUpperCase();
-        faLink.href = `http://flightaware.com/live/modes/${faCallsign}/redirect`;
+        // Update FlightAware link URL - use ICAO hex address (Mode S address)
+        faLink.href = `http://flightaware.com/live/modes/${icao}/redirect`;
 
         distanceEl.textContent = `${distMi} mi`;
         altValue.textContent = alt ? Math.round(alt).toLocaleString() + ' ft' : 'N/A';
