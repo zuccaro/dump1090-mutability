@@ -376,6 +376,45 @@
       font-size: 18px;
       font-weight: 700;
       color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 4px 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      color: var(--text-secondary);
+      font-size: 0;
+    }
+
+    .copy-btn:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+
+    .copy-btn:active {
+      transform: scale(0.95);
+    }
+
+    .copy-btn.copied {
+      background: #4CAF50;
+      border-color: #4CAF50;
+      color: white;
+    }
+
+    .copy-btn svg {
+      width: 14px;
+      height: 14px;
+      display: block;
     }
 
     .aircraft-distance {
@@ -1153,7 +1192,15 @@
         function updateCardContent() {
           cardEl.innerHTML = `
             <div class="aircraft-header">
-              <div class="aircraft-callsign">${callsign}</div>
+              <div class="aircraft-callsign">
+                <span>${callsign}</span>
+                <button class="copy-btn" onclick="event.stopPropagation(); copyCallsign('${callsign.replace(/'/g, "\\'")}', this);" title="Copy callsign">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </div>
               <div class="aircraft-distance">${distMi} mi</div>
             </div>
             <div class="aircraft-info">
@@ -1187,6 +1234,26 @@
         if (!displayAircraft.find(a => a.hex === icao)) {
           cardEl.remove();
         }
+      });
+    }
+
+    // Copy callsign to clipboard
+    function copyCallsign(callsign, button) {
+      navigator.clipboard.writeText(callsign).then(() => {
+        // Visual feedback
+        button.classList.add('copied');
+        const originalHTML = button.innerHTML;
+        button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>`;
+
+        // Reset after 1.5 seconds
+        setTimeout(() => {
+          button.classList.remove('copied');
+          button.innerHTML = originalHTML;
+        }, 1500);
+      }).catch(err => {
+        console.error('Failed to copy:', err);
       });
     }
 
