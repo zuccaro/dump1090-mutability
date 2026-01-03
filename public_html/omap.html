@@ -423,6 +423,32 @@
       color: #2196F3;
     }
 
+    .flightaware-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .flightaware-link:hover {
+      background: #0066CC;
+      color: white;
+      border-color: #0066CC;
+    }
+
+    .flightaware-link svg {
+      width: 12px;
+      height: 12px;
+    }
+
     .aircraft-info {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1357,6 +1383,14 @@
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
                 </button>
+                <a class="flightaware-link" href="#" target="_blank" rel="noopener noreferrer" title="View on FlightAware">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                  </svg>
+                  FA
+                </a>
               </div>
               <div class="aircraft-distance"></div>
             </div>
@@ -1383,9 +1417,9 @@
             </div>
           `;
 
-          // Add click handler to card (not the copy button)
+          // Add click handler to card (not the copy button or FlightAware link)
           cardEl.addEventListener('click', (e) => {
-            if (!e.target.closest('.copy-btn')) {
+            if (!e.target.closest('.copy-btn') && !e.target.closest('.flightaware-link')) {
               selectAircraft(icao);
             }
           });
@@ -1408,6 +1442,7 @@
         // Update text content only (much faster than innerHTML)
         const callsignText = cardEl.querySelector('.callsign-text');
         const copyBtn = cardEl.querySelector('.copy-btn');
+        const faLink = cardEl.querySelector('.flightaware-link');
         const distanceEl = cardEl.querySelector('.aircraft-distance');
         const altValue = cardEl.querySelector('.altitude-value');
         const speedValue = cardEl.querySelector('.speed-value');
@@ -1418,6 +1453,11 @@
 
         callsignText.textContent = callsign;
         copyBtn.dataset.callsign = callsign;
+
+        // Update FlightAware link URL - use actual callsign if available, otherwise ICAO hex
+        const faCallsign = (a.flight || '').trim() || icao.toUpperCase();
+        faLink.href = `http://flightaware.com/live/modes/${faCallsign}/redirect`;
+
         distanceEl.textContent = `${distMi} mi`;
         altValue.textContent = alt ? Math.round(alt).toLocaleString() + ' ft' : 'N/A';
         speedValue.textContent = speed ? Math.round(speed) + ' kt' : 'N/A';
