@@ -1159,15 +1159,62 @@
       for (const a of displayAircraft) {
         const icao = a.hex;
         let cardEl = document.getElementById(`aircraft-${icao}`);
+        let isNewCard = false;
 
         if (!cardEl) {
+          isNewCard = true;
           cardEl = document.createElement('div');
           cardEl.id = `aircraft-${icao}`;
           cardEl.className = 'aircraft-card';
-          cardEl.onclick = () => selectAircraft(icao);
+
+          // Create card structure once
+          cardEl.innerHTML = `
+            <div class="aircraft-header">
+              <div class="aircraft-callsign">
+                <span class="callsign-text"></span>
+                <button class="copy-btn" title="Copy callsign">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="aircraft-distance"></div>
+            </div>
+            <div class="aircraft-info">
+              <div class="info-item">
+                <div class="info-label">Altitude</div>
+                <div class="info-value altitude-value"></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Speed</div>
+                <div class="info-value speed-value"></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Track</div>
+                <div class="info-value track-value"></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Squawk</div>
+                <div class="info-value squawk-value"></div>
+              </div>
+            </div>
+            <div class="aircraft-location" style="display: none;">
+              <strong>Flying over:</strong> <span class="location-text"></span>
+            </div>
+          `;
+
+          // Add click handler to card (not the copy button)
+          cardEl.addEventListener('click', (e) => {
+            if (!e.target.closest('.copy-btn')) {
+              selectAircraft(icao);
+            }
+          });
+
           listEl.appendChild(cardEl);
         }
 
+        // Update selected state
         if (selectedAircraft === icao) {
           cardEl.classList.add('selected');
         } else {
@@ -1179,53 +1226,38 @@
         const speed = a.gs || a.speed;
         const distMi = a.distance ? (a.distance * 0.621371).toFixed(1) : '?';
 
+        // Update text content only (much faster than innerHTML)
+        const callsignText = cardEl.querySelector('.callsign-text');
+        const copyBtn = cardEl.querySelector('.copy-btn');
+        const distanceEl = cardEl.querySelector('.aircraft-distance');
+        const altValue = cardEl.querySelector('.altitude-value');
+        const speedValue = cardEl.querySelector('.speed-value');
+        const trackValue = cardEl.querySelector('.track-value');
+        const squawkValue = cardEl.querySelector('.squawk-value');
+        const locationDiv = cardEl.querySelector('.aircraft-location');
+        const locationText = cardEl.querySelector('.location-text');
+
+        callsignText.textContent = callsign;
+        copyBtn.dataset.callsign = callsign;
+        distanceEl.textContent = `${distMi} mi`;
+        altValue.textContent = alt ? Math.round(alt).toLocaleString() + ' ft' : 'N/A';
+        speedValue.textContent = speed ? Math.round(speed) + ' kt' : 'N/A';
+        trackValue.textContent = a.track ? Math.round(a.track) + '°' : 'N/A';
+        squawkValue.textContent = a.squawk || 'N/A';
+
         // Get location if we don't have it yet
         if (a.lat && a.lon && !cardEl.dataset.location) {
           reverseGeocode(a.lat, a.lon).then(loc => {
             if (loc) {
               cardEl.dataset.location = loc;
-              updateCardContent();
+              locationText.textContent = loc;
+              locationDiv.style.display = '';
             }
           });
+        } else if (cardEl.dataset.location) {
+          locationText.textContent = cardEl.dataset.location;
+          locationDiv.style.display = '';
         }
-
-        function updateCardContent() {
-          cardEl.innerHTML = `
-            <div class="aircraft-header">
-              <div class="aircraft-callsign">
-                <span>${callsign}</span>
-                <button class="copy-btn" onclick="event.stopPropagation(); copyCallsign('${callsign.replace(/'/g, "\\'")}', this);" title="Copy callsign">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                </button>
-              </div>
-              <div class="aircraft-distance">${distMi} mi</div>
-            </div>
-            <div class="aircraft-info">
-              <div class="info-item">
-                <div class="info-label">Altitude</div>
-                <div class="info-value">${alt ? Math.round(alt).toLocaleString() + ' ft' : 'N/A'}</div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Speed</div>
-                <div class="info-value">${speed ? Math.round(speed) + ' kt' : 'N/A'}</div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Track</div>
-                <div class="info-value">${a.track ? Math.round(a.track) + '°' : 'N/A'}</div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">Squawk</div>
-                <div class="info-value">${a.squawk || 'N/A'}</div>
-              </div>
-            </div>
-            ${cardEl.dataset.location ? `<div class="aircraft-location"><strong>Flying over:</strong> ${cardEl.dataset.location}</div>` : ''}
-          `;
-        }
-
-        updateCardContent();
       }
 
       // Remove cards for aircraft no longer in top 10
@@ -1237,25 +1269,75 @@
       });
     }
 
-    // Copy callsign to clipboard
-    function copyCallsign(callsign, button) {
-      navigator.clipboard.writeText(callsign).then(() => {
-        // Visual feedback
-        button.classList.add('copied');
-        const originalHTML = button.innerHTML;
-        button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>`;
+    // Copy text to clipboard - works in both secure and non-secure contexts
+    function copyToClipboard(text) {
+      // Try modern clipboard API first (requires HTTPS)
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
 
-        // Reset after 1.5 seconds
-        setTimeout(() => {
-          button.classList.remove('copied');
-          button.innerHTML = originalHTML;
-        }, 1500);
-      }).catch(err => {
-        console.error('Failed to copy:', err);
+      // Fallback for non-HTTPS contexts
+      return new Promise((resolve, reject) => {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+          const successful = document.execCommand('copy');
+          document.body.removeChild(textArea);
+          if (successful) {
+            resolve();
+          } else {
+            reject(new Error('Copy command failed'));
+          }
+        } catch (err) {
+          document.body.removeChild(textArea);
+          reject(err);
+        }
       });
     }
+
+    // Copy callsign to clipboard - using event delegation
+    // Using capture phase to intercept clicks before they bubble to card
+    document.addEventListener('click', function(e) {
+      // Check if click is on or inside a copy button
+      const copyBtn = e.target.closest('.copy-btn');
+
+      if (copyBtn) {
+        e.stopPropagation(); // Stop the event from bubbling to the card
+        e.preventDefault();
+
+        const callsign = copyBtn.dataset.callsign;
+        if (!callsign) return;
+
+        copyToClipboard(callsign).then(() => {
+          // Visual feedback
+          copyBtn.classList.add('copied');
+          const originalHTML = copyBtn.innerHTML;
+          copyBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>`;
+
+          // Reset after 1.5 seconds
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.innerHTML = originalHTML;
+          }, 1500);
+        }).catch(err => {
+          console.error('Failed to copy:', err);
+          // Show error feedback
+          copyBtn.style.backgroundColor = '#f44336';
+          setTimeout(() => {
+            copyBtn.style.backgroundColor = '';
+          }, 1000);
+        });
+      }
+    }, true); // Use capture phase to catch the event before it bubbles
 
     // Select aircraft
     function selectAircraft(icao) {
