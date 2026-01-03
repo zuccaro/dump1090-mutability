@@ -578,9 +578,18 @@
       top: 216px;  /* 168 + 44 + 4px gap */
     }
 
+    #tracksBtn {
+      top: 264px;  /* 216 + 44 + 4px gap */
+    }
+
     .btn.active {
       background: var(--accent-color);
       color: var(--accent-text);
+    }
+
+    /* Aircraft tracks */
+    .aircraft-track {
+      pointer-events: none;
     }
 
     /* Aircraft labels */
@@ -699,6 +708,15 @@
     </svg>
   </button>
 
+  <button id="tracksBtn" class="btn" title="Toggle aircraft tracks">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 12h3m3 0h3m3 0h3m3 0h3"/>
+      <circle cx="6" cy="12" r="1" fill="currentColor"/>
+      <circle cx="12" cy="12" r="1" fill="currentColor"/>
+      <circle cx="18" cy="12" r="1" fill="currentColor"/>
+    </svg>
+  </button>
+
   <div id="panel" class="minimized">
     <div id="panel-handle-area">
       <div id="panel-handle"></div>
@@ -729,12 +747,16 @@
     let receiverPosition = null;
     let aircraftMarkers = {};
     let aircraftLabels = {};
+    let aircraftTracks = {}; // Track polylines
+    let aircraftHistory = {}; // Position history for each aircraft
     let selectedAircraft = null;
     let autoCenter = false;
     let showLabels = true; // Labels on by default
+    let showTracks = false; // Tracks off by default
     let isDarkMode = false;
     let lightTileLayer = null;
     let darkTileLayer = null;
+    const MAX_TRACK_POINTS = 100; // Maximum points to keep in track history
 
     // Geocoding cache
     const locationCache = new Map();
@@ -856,6 +878,53 @@
       loadReceiverPosition();
     }
 
+    // Load historical data from history files
+    async function loadHistoricalData() {
+      try {
+        // First get receiver info to know how many history files are available
+        const receiverRes = await fetch('data/receiver.json');
+        const receiverData = await receiverRes.json();
+        const historyCount = receiverData.history || 0;
+
+        if (historyCount === 0) {
+          console.log('No history files available');
+          return;
+        }
+
+        console.log(`Loading ${historyCount} history files...`);
+
+        // Load all history files
+        const historyFiles = [];
+        for (let i = 0; i < Math.min(historyCount, 120); i++) {
+          try {
+            const res = await fetch(`data/history_${i}.json`);
+            const data = await res.json();
+            historyFiles.push(data);
+          } catch (e) {
+            console.warn(`Failed to load history_${i}.json:`, e);
+          }
+        }
+
+        // Sort by timestamp
+        historyFiles.sort((a, b) => a.now - b.now);
+
+        // Process historical positions
+        historyFiles.forEach(snapshot => {
+          const aircraft = snapshot.aircraft || [];
+          aircraft.forEach(a => {
+            if (a.lat && a.lon) {
+              const altitude = a.alt_baro || a.altitude || a.alt;
+              updateAircraftHistory(a.hex, a.lat, a.lon, altitude, snapshot.now * 1000);
+            }
+          });
+        });
+
+        console.log(`Loaded historical data for ${Object.keys(aircraftHistory).length} aircraft`);
+      } catch (e) {
+        console.error('Failed to load historical data:', e);
+      }
+    }
+
     // Load receiver position
     async function loadReceiverPosition() {
       try {
@@ -879,6 +948,9 @@
 
           // Center map on receiver
           map.setView(receiverPosition, 10);
+
+          // Load historical data for track initialization
+          await loadHistoricalData();
 
           // Start updating aircraft
           updateAircraft();
@@ -1048,6 +1120,96 @@
       }
     }
 
+    // Show/hide aircraft tracks
+    function toggleTracks() {
+      showTracks = !showTracks;
+      const btn = document.getElementById('tracksBtn');
+
+      if (showTracks) {
+        btn.classList.add('active');
+        // Tracks will be created/shown in next update cycle
+      } else {
+        btn.classList.remove('active');
+        // Remove all tracks
+        Object.keys(aircraftTracks).forEach(icao => {
+          map.removeLayer(aircraftTracks[icao]);
+          delete aircraftTracks[icao];
+        });
+      }
+    }
+
+    // Update aircraft position history
+    function updateAircraftHistory(icao, lat, lon, altitude, timestamp) {
+      if (!aircraftHistory[icao]) {
+        aircraftHistory[icao] = [];
+      }
+
+      const history = aircraftHistory[icao];
+
+      // Check if position actually changed
+      if (history.length > 0) {
+        const last = history[history.length - 1];
+        if (last.lat === lat && last.lon === lon) {
+          return; // Position unchanged, don't add duplicate
+        }
+      }
+
+      history.push({
+        lat,
+        lon,
+        altitude: altitude || 0,
+        timestamp: timestamp || Date.now()
+      });
+
+      // Limit history length
+      if (history.length > MAX_TRACK_POINTS) {
+        history.shift();
+      }
+    }
+
+    // Create or update aircraft track polyline with gradient effect
+    function updateAircraftTrack(icao, isSelected) {
+      if (!showTracks || !aircraftHistory[icao] || aircraftHistory[icao].length < 2) {
+        return;
+      }
+
+      const history = aircraftHistory[icao];
+      const points = history.map(h => [h.lat, h.lon]);
+
+      // Remove old track if exists
+      if (aircraftTracks[icao]) {
+        map.removeLayer(aircraftTracks[icao]);
+      }
+
+      // Create track with gradient effect using multiple segments
+      const segments = [];
+      const numPoints = points.length;
+
+      for (let i = 0; i < numPoints - 1; i++) {
+        const progress = i / (numPoints - 1);
+        const opacity = 0.3 + (progress * 0.7); // Fade from 0.3 to 1.0
+        const weight = 2 + (progress * 1); // Gradually thicker
+
+        const segment = L.polyline(
+          [points[i], points[i + 1]],
+          {
+            color: isSelected ? '#2196F3' : '#FF9800',
+            weight: weight,
+            opacity: opacity,
+            smoothFactor: 1.5,
+            className: 'aircraft-track'
+          }
+        );
+
+        segments.push(segment);
+      }
+
+      // Group all segments into a layer group
+      const trackGroup = L.layerGroup(segments);
+      trackGroup.addTo(map);
+      aircraftTracks[icao] = trackGroup;
+    }
+
     // Update aircraft
     async function updateAircraft() {
       try {
@@ -1080,7 +1242,7 @@
         // Update markers
         const currentIcaos = new Set(aircraft.map(a => a.hex));
 
-        // Remove old markers and labels
+        // Remove old markers, labels, and tracks
         Object.keys(aircraftMarkers).forEach(icao => {
           if (!currentIcaos.has(icao)) {
             map.removeLayer(aircraftMarkers[icao]);
@@ -1090,13 +1252,25 @@
               map.removeLayer(aircraftLabels[icao]);
               delete aircraftLabels[icao];
             }
+
+            if (aircraftTracks[icao]) {
+              map.removeLayer(aircraftTracks[icao]);
+              delete aircraftTracks[icao];
+            }
+
+            // Clean up history for aircraft that are gone
+            delete aircraftHistory[icao];
           }
         });
 
-        // Update/add markers
+        // Update/add markers and track history
         aircraft.forEach(a => {
           const isSelected = selectedAircraft === a.hex;
           const icon = createAircraftIcon(a.category, a.track, isSelected);
+          const altitude = a.alt_baro || a.altitude || a.alt;
+
+          // Update position history
+          updateAircraftHistory(a.hex, a.lat, a.lon, altitude, data.now * 1000);
 
           if (aircraftMarkers[a.hex]) {
             aircraftMarkers[a.hex].setLatLng([a.lat, a.lon]);
@@ -1106,6 +1280,11 @@
               .addTo(map)
               .on('click', () => selectAircraft(a.hex));
             aircraftMarkers[a.hex] = marker;
+          }
+
+          // Update track if enabled
+          if (showTracks) {
+            updateAircraftTrack(a.hex, isSelected);
           }
         });
 
@@ -1500,6 +1679,9 @@
 
     // Toggle dark mode button
     document.getElementById('darkModeBtn').addEventListener('click', toggleDarkMode);
+
+    // Toggle tracks button
+    document.getElementById('tracksBtn').addEventListener('click', toggleTracks);
 
     // Hide loading screen
     function hideLoadingScreen() {
